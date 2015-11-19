@@ -1,36 +1,45 @@
+require(DiagrammeR)
+require(magrittr)
+##require(webshot) #' Need to install via devtools 
+require(htmltools)
+require(exportwidget)
 
 
+#Format numbers as short string with correct 0.0k/m/...
+formatNum <- function(x, pc = FALSE) {
+  signv <- sign(x)
+  x <- abs(x)
+  if (!(pc)) {
+    x <- ifelse(x < 10, sprintf("%.2f", x), ifelse(x < 1000, sprintf("%.0f", x), 
+          ifelse(x < 1e6, paste0(round(x/1e3),"k"),
+          ifelse(x < 1e7, paste0(round(x/1e6,1),"m"), paste0(round(x/1e6,0), "m")))))
+  } else {
+    x <- paste0(round(x*100,1),"%")
+  }
+  paste0(ifelse(signv == 1, "+", "-"),x)
+}
 
-
-
-
-KPItree <- function(td) {
-    require(DiagrammeR)
-    require(magrittr)
+KPItree <- function(td, optional_title_suffix = "") {
     
     # function for creating visualisations of Customer metrics
+    # If you know customer numbers then it will split out in to four levels
 
     names(td) %<>% toupper(.)
     
     #' td = "tree data"
     #' td should take the form:
-    #' [1] "SALES_PLAN_YEAR_A"   "SALES_PLAN_PERIOD_A" "GROUP_1" "GROUP_2"
-    #' [5] "YEAR"                "CUSTOMERS"           "TXNS"    "UNITS"
-    #' [9] "TISP"
-    #' If we want to get three level trees out of the function then we still
-    #'
-    
-    #' Todo: need to introduce some logic to determine whether we're going to
-    #' need three or four level trees
-    
-    #' #Create Colour Gradient -- used iwanthue web app to avoid the barf spectrum
+    #' [1] "GROUP_1" "GROUP_2"
+    #' [3] "YEAR"                "CUSTOMERS"           "TXNS"    "UNITS"
+    #' [7] "TISP"
     
     #The tree will be named after the category and card_flag
     
     tree_title <- paste(as.character(td[[1,1]]),
-                        as.character(td[[1,2]]), sep = "\n")
+                        as.character(td[[1,2]]),
+                        as.character(optional_title_suffix), 
+                        sep = "\n")
     
-    
+    #' #Create Colour Gradient -- used iwanthue web app to avoid the barf spectrum
     colr <- colorRamp(c("#D04C2A", "#FC733A", "#EBC341", "#70DC4C", "#4FB800"))
     
     tree_depth  <-
@@ -41,7 +50,6 @@ KPItree <- function(td) {
         } else {
             4
         }
-    
     
     #' New Dataset construction
     
@@ -108,7 +116,6 @@ KPItree <- function(td) {
                 ifelse(x > 0, rep(" ", 2 * x), "")))
     }
     
-    
     # Create tree structure - nodes and edges
     
     nodes = ifelse(tree_depth == 3, 5, 7)
@@ -118,7 +125,6 @@ KPItree <- function(td) {
     } else {
           node_names <- c("Title","TISP","ACV","Customers","ATV","Freq","ATU","AIV")
     }
-    
     
     tree_nodes <- create_nodes(
         nodes = node_names,
@@ -151,7 +157,29 @@ KPItree <- function(td) {
     
     return(trees)
     
-    
 }
 
+data <- read.csv("1. KPI Data.csv")
 
+data %<>% filter(is.na(SALES_PLAN_YEAR_A)) %>% 
+    arrange(GROUP_1, GROUP_2) %>% 
+    .[,3:9]
+
+# Plot tree in Viewer
+KPItree(data[1:2,]) %>% render_graph() 
+
+#' Working example - Well you have to construct data yourself
+#' This will render the tree and put a PNG in the root of your project
+
+for(i in seq(1, nrow(data), 2)) {
+    title <- paste(as.character(data[[i, 1]]),
+                   as.character(data[[i + 1, 2]]), sep = "_") %>% 
+        sub(" ", "_",.)
+    KPItree(data[i:(i + 1),]) %>% render_graph() %>% html_print(tagList(., export_widget())) %>%
+        normalizePath(., winslash = "/") %>%
+        gsub(x = .,
+             pattern = ":/",
+             replacement = "://") %>%
+        paste0("file:///", .) %>%
+        webshot(file = paste0(title, ".png"), delay = 0.5)
+}
